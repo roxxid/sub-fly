@@ -13,7 +13,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: subfly-service:latest
+    image: subfly-server:1.0.0
     container_name: subfly
     restart: unless-stopped
     ports:

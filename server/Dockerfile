@@ -1,4 +1,5 @@
-# SubFly transcription service — NVIDIA Tesla T4 / CUDA
+# SubFly server — NVIDIA Tesla T4 / CUDA
+# Build: docker build -t subfly-server:1.0.0 .
 # Target: Unraid with Nvidia Driver plugin + Docker
 
 FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
