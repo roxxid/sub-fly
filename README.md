@@ -84,6 +84,45 @@ client can hand the server a directly-openable local/network path and wants
 to skip local audio capture — see [PROTOCOL.md](PROTOCOL.md) — but it only
 works for plain resolvable files, not add-ons/live TV/DRM.
 
+## How accurate is this, really?
+
+Whisper-family models (`large-v3` by default here) are genuinely good on
+clear, well-mixed dialogue in English — comparable to commercial captioning
+for a normal movie/TV soundtrack. Two things drag accuracy down in
+predictable ways, and it's worth knowing both before you rely on this:
+
+1. **Proper nouns Whisper hasn't statistically "seen."** The model has no
+   dictionary lookup — it generates text token by token, biased by what's
+   common in its training data. A name that's part of a huge franchise
+   (Star Wars, Marvel, Game of Thrones) is usually fine because that text
+   shows up constantly in Whisper's training corpus. An invented name
+   specific to one small/indie/foreign production, with no real-world
+   textual footprint, is much more likely to come out as the closest-
+   sounding real word instead.
+2. **Streaming, not batch, transcription.** This runs on short rolling
+   chunks so captions can appear live, rather than transcribing a whole
+   file with full context and lookahead. That's inherent to "live" and
+   trades a bit of accuracy for latency — chunk-boundary cuts, background
+   music, heavy accents, and overlapping dialogue all still cause errors
+   independent of vocabulary.
+
+To directly help with (1), every client sends a **vocabulary hint** — title,
+cast names, plot, genre, whatever Kodi's metadata has for the item — which
+the server passes to faster-whisper as `hotwords`, biasing decoding toward
+those specific names for the whole session. This isn't a magic fix: it does
+nothing for content with no metadata (an unscraped file, most add-on
+streams), and it doesn't guarantee correct spelling of something truly
+obscure. But for anything in your Kodi library with normal scraped metadata,
+it measurably improves the odds of getting character/place names right
+instead of relying purely on Whisper's general vocabulary. See "Vocabulary
+hints" in [PROTOCOL.md](PROTOCOL.md) for the full mechanism, and
+`clients/kodi/service.subfly/resources/lib/hints.py` for exactly what gets
+built and sent.
+
+If you want higher accuracy at the cost of latency/GPU load, `model_size`,
+`beam_size`, and `chunk_seconds` are all server-side env vars — see
+[server/README.md](server/README.md).
+
 ## License
 
 MIT

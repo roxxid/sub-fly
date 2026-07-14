@@ -32,9 +32,12 @@ Request:
 {
   "media_path": "/media/Movies/film.mkv",
   "start_seconds": 0.0,
-  "language": "en"
+  "language": "en",
+  "vocabulary_hint": "The Wrath of Khan. Characters/cast: Spock, Uhura, Khan Noonien Singh. Science Fiction."
 }
 ```
+
+`vocabulary_hint` is optional. See "Vocabulary hints" below.
 
 Response:
 
@@ -100,6 +103,7 @@ Subtitle cue:
 {"type": "position", "position": 12.4}
 {"type": "seek", "position": 90.0}
 {"type": "pause", "paused": true}
+{"type": "vocabulary_hint", "text": "..."}
 {"type": "stop"}
 ```
 
@@ -109,7 +113,7 @@ Send `position` about once per second so the server stays roughly in sync with p
 
 ## WebSocket — live PCM (recommended default)
 
-`WS /v1/live?language=en&start_seconds=0`
+`WS /v1/live?language=en&start_seconds=0&vocabulary_hint=<url-encoded text>`
 
 This is the **source-agnostic mode**: the server never opens a file, so it
 works for anything a client can capture audio from — local files, external
@@ -130,6 +134,9 @@ screen/system audio, anything. All three bundled clients (`clients/kodi`,
    - `{"type": "pause", "paused": true}` — server stops transcribing
      incoming audio while paused (send this immediately on pause/resume,
      not just on the next tick)
+   - `{"type": "vocabulary_hint", "text": "..."}` — update the hotwords
+     hint mid-session (metadata arrived late, or the item changed without
+     a full session restart)
    - `{"type": "stop"}` — end the session
 
 ### Timestamp sync
@@ -142,6 +149,40 @@ client's reported `position` drifts from that running value by more than
 server snaps its internal offset to match instead of accumulating drift
 forever. Send `position` regularly and send `seek` immediately after a user
 seek so this recovers fast.
+
+---
+
+## Vocabulary hints (character/place names, in-universe terms)
+
+Whisper models are trained on general-purpose vocabulary statistics, so
+they're noticeably better at common dictionary words than at invented or
+obscure proper nouns — a fictional character or place name unique to one
+movie/show has no statistical support in the model's decoder unless that
+specific title happens to be well-represented in Whisper's training data
+(popular franchises usually are; small/indie/foreign productions with
+invented names often aren't).
+
+`vocabulary_hint` is optional free text (title, character/cast names, plot,
+genre — anything that names the specific proper nouns of what's playing).
+The server forwards it verbatim to faster-whisper's
+[`hotwords`](https://github.com/SYSTRAN/faster-whisper) parameter, which
+biases decoding toward that vocabulary for every chunk. It measurably helps
+for content with rich, easily obtained metadata (a scraped Kodi library
+item); it does nothing for content with none (an unscraped file, most
+add-on/plugin streams) — that's fine, transcription just falls back to
+Whisper's default behavior, it doesn't get *worse*.
+
+The server truncates it to ~600 characters (well under faster-whisper's
+~223-token internal limit for `hotwords`) and collapses whitespace; there's
+no need for a client to pre-truncate beyond staying roughly in that range.
+This is a bias, not a guarantee — it does not make transcription of truly
+obscure invented terminology perfect, and it doesn't help with unrelated
+sources of error (background music, heavy accents, overlapping dialogue,
+whispered/shouted delivery). All three bundled clients build this
+automatically from whatever metadata Kodi has for the currently playing
+item (see `clients/kodi/service.subfly/resources/lib/hints.py` and
+`clients/android/.../KodiRpcClient.kt#getNowPlayingHint`); pass an empty
+string if you have nothing useful.
 
 ---
 

@@ -36,7 +36,11 @@ docker compose -f docker-compose.unraid.yml up -d --build
 | `SUBFLY_LANGUAGE` | `en` | Output language |
 | `SUBFLY_PATH_MAPS` | `/media=/data` | Client path → container path |
 | `SUBFLY_API_TOKEN` | _(empty)_ | Optional shared secret |
-| `SUBFLY_CHUNK_SECONDS` | `3.0` | Audio window size |
+| `SUBFLY_CHUNK_SECONDS` | `3.0` | Audio window size — smaller is lower latency, larger gives Whisper more context per chunk |
+| `SUBFLY_BEAM_SIZE` | `5` | Beam search width — higher can improve accuracy at the cost of GPU time per chunk |
+| `SUBFLY_VAD_FILTER` | `true` | Skip silent stretches with Silero VAD before transcribing |
+
+See ["How accurate is this, really?"](../README.md#how-accurate-is-this-really) in the top-level README for what actually moves accuracy, including the per-session `vocabulary_hint` mechanism (documented in [PROTOCOL.md](../PROTOCOL.md#vocabulary-hints-characterplace-names-in-universe-terms)).
 
 ## Publish (optional)
 
