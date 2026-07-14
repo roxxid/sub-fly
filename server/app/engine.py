@@ -54,6 +54,7 @@ class WhisperEngine:
         *,
         time_offset: float = 0.0,
         language: Optional[str] = None,
+        hotwords: Optional[str] = None,
     ) -> list[TranscriptSegment]:
         if self._model is None:
             raise RuntimeError("model not loaded")
@@ -68,6 +69,12 @@ class WhisperEngine:
                 word_timestamps=self.settings.word_timestamps,
                 condition_on_previous_text=False,
                 without_timestamps=False,
+                # Biases decoding toward specific vocabulary (character/place
+                # names, in-universe terms) for whatever's currently playing,
+                # instead of relying only on Whisper's general-purpose
+                # training-data statistics. See SessionState.vocabulary_hint
+                # and PROTOCOL.md for where this comes from.
+                hotwords=hotwords or None,
             )
             results: list[TranscriptSegment] = []
             for seg in segments:

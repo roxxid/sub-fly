@@ -72,6 +72,14 @@ class StartRequest(BaseModel):
     media_path: str = Field(..., description="Kodi file path or stream URL")
     start_seconds: float = 0.0
     language: str = "en"
+    vocabulary_hint: str = Field(
+        default="",
+        description=(
+            "Free-text hint (title, character names, plot, genre) used as "
+            "faster-whisper's hotwords to bias transcription toward the "
+            "specific proper nouns of whatever's playing."
+        ),
+    )
 
 
 class SeekRequest(BaseModel):
@@ -113,6 +121,7 @@ async def create_session(body: StartRequest, _: None = Depends(require_token)):
             body.media_path,
             start_seconds=body.start_seconds,
             language=body.language,
+            vocabulary_hint=body.vocabulary_hint,
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -158,6 +167,7 @@ async def session_ws(websocket: WebSocket, session_id: str):
       {"type":"position","position":123.4}
       {"type":"pause","paused":true}
       {"type":"seek","position":50.0}
+      {"type":"vocabulary_hint","text":"Show title. Characters: ..."}
       {"type":"stop"}
     """
     assert sessions is not None
@@ -194,6 +204,8 @@ async def session_ws(websocket: WebSocket, session_id: str):
                 await sessions.set_paused(session_id, bool(data.get("paused", True)))
             elif typ == "seek":
                 await sessions.seek(session_id, float(data.get("position", 0)))
+            elif typ == "vocabulary_hint":
+                await sessions.set_vocabulary_hint(session_id, str(data.get("text", "")))
             elif typ == "stop":
                 await sessions.stop(session_id)
                 break
@@ -227,12 +239,16 @@ async def live_pcm_ws(websocket: WebSocket):
     to stream continuously for as long as something is playing.
 
     Protocol:
-      1. Client connects (optional ?token=&language=en&start_seconds=0)
+      1. Client connects (optional ?token=&language=en&start_seconds=0&
+         vocabulary_hint=<url-encoded text>)
       2. Server sends {"type":"session_started",...}
       3. Client sends binary PCM frames (16kHz mono s16le) continuously,
          and periodically a JSON {"type":"position","position":<seconds>}
          so the server can keep caption timestamps anchored to the actual
          playback clock (handles seeks, live-TV jumps, pause gaps, etc.)
+         It may also send {"type":"vocabulary_hint","text":"..."} at any
+         point to update the hotwords hint (e.g. once metadata for the
+         current item becomes available, or on an episode change).
       4. Server sends {"type":"subtitle","start":..,"end":..,"text":"..."}
     """
     assert sessions is not None
@@ -243,12 +259,17 @@ async def live_pcm_ws(websocket: WebSocket):
         return
 
     language = websocket.query_params.get("language") or settings.language
+    vocabulary_hint = websocket.query_params.get("vocabulary_hint", "")
     try:
         start_seconds = float(websocket.query_params.get("start_seconds") or 0.0)
     except ValueError:
         start_seconds = 0.0
     await websocket.accept()
-    state = await sessions.start_pcm_session(language=language, start_seconds=start_seconds)
+    state = await sessions.start_pcm_session(
+        language=language,
+        start_seconds=start_seconds,
+        vocabulary_hint=vocabulary_hint,
+    )
     session_id = state.session_id
 
     async def pump_out() -> None:
@@ -277,6 +298,8 @@ async def live_pcm_ws(websocket: WebSocket):
                     await sessions.seek(session_id, float(data.get("position", 0)))
                 elif typ == "pause":
                     await sessions.set_paused(session_id, bool(data.get("paused", True)))
+                elif typ == "vocabulary_hint":
+                    await sessions.set_vocabulary_hint(session_id, str(data.get("text", "")))
                 elif typ == "stop":
                     break
     except WebSocketDisconnect:

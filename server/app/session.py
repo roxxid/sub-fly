@@ -16,6 +16,19 @@ from app.pathmap import media_exists, rewrite_media_path
 
 log = logging.getLogger("subfly.session")
 
+# faster-whisper's `hotwords` (and `initial_prompt`/`prefix`) are limited to
+# roughly 223 tokens internally; we cap well under that in characters so a
+# client can't accidentally (or deliberately) send something that eats the
+# whole prompt budget or measurably slows decoding.
+MAX_VOCABULARY_HINT_CHARS = 600
+
+
+def clean_vocabulary_hint(text: Optional[str]) -> str:
+    """Sanitize a client-supplied vocabulary hint before it reaches Whisper."""
+    if not text:
+        return ""
+    return " ".join(str(text).split())[:MAX_VOCABULARY_HINT_CHARS]
+
 
 @dataclass
 class SessionState:
@@ -26,6 +39,11 @@ class SessionState:
     playback_position: float = 0.0
     paused: bool = False
     running: bool = False
+    # Free-text hint (title/character names/plot/genre — whatever a client
+    # can scrape from its media metadata) used as faster-whisper's
+    # `hotwords`, to bias transcription toward the specific proper nouns of
+    # whatever's actually playing. See PROTOCOL.md.
+    vocabulary_hint: str = ""
     cancel: asyncio.Event = field(default_factory=asyncio.Event)
     outbound: asyncio.Queue = field(default_factory=asyncio.Queue)
     task: Optional[asyncio.Task] = None
@@ -46,6 +64,7 @@ class SessionManager:
         *,
         start_seconds: float = 0.0,
         language: Optional[str] = None,
+        vocabulary_hint: str = "",
     ) -> SessionState:
         resolved = rewrite_media_path(media_path, self.settings.path_map_pairs())
         if not media_exists(resolved):
@@ -57,6 +76,7 @@ class SessionManager:
             media_path=media_path,
             resolved_path=resolved,
             playback_position=start_seconds,
+            vocabulary_hint=clean_vocabulary_hint(vocabulary_hint),
         )
         self._sessions[session_id] = state
         state.running = True
@@ -80,6 +100,7 @@ class SessionManager:
         *,
         language: Optional[str] = None,
         start_seconds: float = 0.0,
+        vocabulary_hint: str = "",
     ) -> SessionState:
         """Start a session fed by raw PCM pushed from the client.
 
@@ -95,6 +116,7 @@ class SessionManager:
             media_path="pcm://live",
             resolved_path="pcm://live",
             playback_position=max(0.0, start_seconds),
+            vocabulary_hint=clean_vocabulary_hint(vocabulary_hint),
         )
         self._sessions[session_id] = state
         state.running = True
@@ -136,6 +158,18 @@ class SessionManager:
             await state.outbound.put(
                 {"type": "seeked", "session_id": session_id, "position": position}
             )
+
+    async def set_vocabulary_hint(self, session_id: str, hint: str) -> None:
+        """Update the hotwords hint mid-session.
+
+        Useful when a client's metadata for the current item wasn't ready
+        yet at session start, or when it changes (e.g. a new episode of a
+        TV show starts without a full stop/start of the session).
+        """
+        state = self._sessions.get(session_id)
+        if not state:
+            return
+        state.vocabulary_hint = clean_vocabulary_hint(hint)
 
     async def set_paused(self, session_id: str, paused: bool) -> None:
         state = self._sessions.get(session_id)
@@ -194,6 +228,7 @@ class SessionManager:
                 audio,
                 time_offset=offset,
                 language=language,
+                hotwords=state.vocabulary_hint or None,
             )
             for seg in segments:
                 await self._emit_subtitle(state, seg)
@@ -237,6 +272,7 @@ class SessionManager:
                     audio,
                     time_offset=chunk_start,
                     language=lang,
+                    hotwords=state.vocabulary_hint or None,
                 )
                 for seg in segments:
                     if state.cancel.is_set():
