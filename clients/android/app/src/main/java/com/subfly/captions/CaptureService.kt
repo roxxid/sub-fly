@@ -129,13 +129,12 @@ class CaptureService : Service() {
         pollJob = scope.launch {
             var lastPositionSendMs = 0L
             while (isActive) {
-                val state = withContext(Dispatchers.IO) {
-                    KodiRpcClient(prefs.kodiHost, prefs.kodiPort, prefs.kodiUser, prefs.kodiPass)
-                        .getPlaybackState()
-                }
+                val rpc = KodiRpcClient(prefs.kodiHost, prefs.kodiPort, prefs.kodiUser, prefs.kodiPass)
+                val state = withContext(Dispatchers.IO) { rpc.getPlaybackState() }
                 if (state != null && state.playing) {
                     if (!sessionActive) {
-                        startSession(state.positionSeconds)
+                        val hint = withContext(Dispatchers.IO) { rpc.getNowPlayingHint() }
+                        startSession(state.positionSeconds, hint)
                     }
                     if (state.paused != lastKodiPaused) {
                         wsClient?.sendPause(state.paused)
@@ -162,7 +161,7 @@ class CaptureService : Service() {
 
     // --- per-playback session ----------------------------------------------
 
-    private fun startSession(startSeconds: Double) {
+    private fun startSession(startSeconds: Double, vocabularyHint: String = "") {
         sessionActive = true
         lastKodiPaused = false
         synchronized(cuesLock) { cues.clear() }
@@ -174,7 +173,7 @@ class CaptureService : Service() {
             onError = { msg -> Log.e(TAG, "server error: $msg") },
             onClosed = { Log.i(TAG, "websocket closed") },
         )
-        client.connect(prefs.language, startSeconds)
+        client.connect(prefs.language, startSeconds, vocabularyHint)
         wsClient = client
         startAudioCapture()
     }

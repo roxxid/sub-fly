@@ -8,6 +8,7 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString
 import org.json.JSONObject
+import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
 private const val TAG = "SubFlyWs"
@@ -38,10 +39,20 @@ class SubFlyWsClient(
     val isOpen: Boolean
         get() = ws != null
 
-    fun connect(language: String, startSeconds: Double) {
+    /**
+     * @param vocabularyHint Best-effort "what's playing" text (title/cast/
+     *   plot/genre — see [KodiRpcClient.getNowPlayingHint]) sent to the
+     *   server as `vocabulary_hint`, which biases Whisper's decoding
+     *   toward the specific proper nouns of whatever's playing. Pass an
+     *   empty string if nothing useful is available.
+     */
+    fun connect(language: String, startSeconds: Double, vocabularyHint: String = "") {
         val wsScheme = if (baseUrl.startsWith("https")) "wss" else "ws"
         val hostPart = baseUrl.substringAfter("://")
         val urlBuilder = StringBuilder("$wsScheme://$hostPart/v1/live?language=$language&start_seconds=$startSeconds")
+        if (vocabularyHint.isNotEmpty()) {
+            urlBuilder.append("&vocabulary_hint=").append(URLEncoder.encode(vocabularyHint, "UTF-8"))
+        }
         if (token.isNotEmpty()) {
             urlBuilder.append("&token=").append(token)
         }
@@ -103,6 +114,10 @@ class SubFlyWsClient(
 
     fun sendSeek(position: Double) {
         sendJson(JSONObject().apply { put("type", "seek"); put("position", position) })
+    }
+
+    fun sendVocabularyHint(text: String) {
+        sendJson(JSONObject().apply { put("type", "vocabulary_hint"); put("text", text) })
     }
 
     private fun sendJson(obj: JSONObject) {
