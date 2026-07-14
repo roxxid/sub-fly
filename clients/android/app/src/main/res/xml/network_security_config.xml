@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Allows plain http:// to the SubFly server, since it typically runs
+  unencrypted on a home LAN (e.g. an Unraid box). Tighten this if you
+  put SubFly behind TLS.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

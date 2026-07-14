@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="subfly_primary">#0A5A6E</color>
+    <color name="subfly_primary_dark">#063C49</color>
+    <color name="subfly_accent">#E8F4F8</color>
+    <color name="overlay_bg">#B0000000</color>
+    <color name="overlay_text">#FFFFFFFF</color>
+</resources>

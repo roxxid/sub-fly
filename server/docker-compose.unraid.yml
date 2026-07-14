@@ -1,0 +1,33 @@
+# Alternate compose for older Unraid Docker that uses nvidia-container-runtime
+# instead of Compose `gpus:` syntax.
+#
+#   docker compose -f docker-compose.unraid.yml up -d --build
+
+services:
+  subfly:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: subfly-server:1.0.0
+    container_name: subfly
+    restart: unless-stopped
+    runtime: nvidia
+    ports:
+      - "8765:8765"
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      SUBFLY_MODEL_SIZE: ${SUBFLY_MODEL_SIZE:-large-v3}
+      SUBFLY_DEVICE: cuda
+      SUBFLY_COMPUTE_TYPE: float16
+      SUBFLY_LANGUAGE: en
+      SUBFLY_CHUNK_SECONDS: "3.0"
+      SUBFLY_VAD_FILTER: "true"
+      SUBFLY_PATH_MAPS: ${SUBFLY_PATH_MAPS:-/media=/data}
+      SUBFLY_API_TOKEN: ${SUBFLY_API_TOKEN:-}
+    volumes:
+      - subfly-models:/models
+      - ${MEDIA_PATH:-/mnt/user/media}:/data:ro
+
+volumes:
+  subfly-models:
