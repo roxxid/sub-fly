@@ -59,15 +59,31 @@ Android SDK 34 + Gradle 8.9): `assembleDebug` and `lintDebug` both pass
 clean, no errors or warnings.
 
 Install over ADB (enable Developer options → USB/network debugging on the
-stick first):
+stick first — Settings → Device Preferences → About → tap the build number
+7 times, then Developer options → Network debugging):
 
 ```bash
 adb connect <stick-ip>:5555
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Or sideload the APK via a file manager / "Send files to TV" app if you don't
-want to use adb.
+This is the important bit if your stick's launcher is locked down and hides
+the "install unknown apps" toggle: `adb install` doesn't go through that UI
+flag at all. As long as network/USB debugging is reachable, you can install
+this app even on devices where the on-screen settings for sideloading are
+missing or disabled. If Kodi itself is sideloaded on the stick (it almost
+certainly is, since Kodi isn't Play-Store-distributed for Android TV in most
+regions), this app installs through the exact same path and carries the same
+trust level — it's not a step up in privilege from what you already did to
+get Kodi running.
+
+From the repo root, `make android-deploy STICK=192.168.1.50` (or just
+`make android-connect STICK=... && make android-install` /
+`make android-build` individually) wraps the build+connect+install+launch
+sequence above.
+
+If you'd rather not use adb at all, sideload the APK via a file manager /
+"Send files to TV" app instead — same APK, no adb required either way.
 
 ## Setup on the device
 
