@@ -1,0 +1,16 @@
+.git
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.venv/
+**/venv/
+**/.env
+dist/
+*.egg-info/
+.DS_Store
+service/models/
+*.mkv
+*.mp4
+*.wav

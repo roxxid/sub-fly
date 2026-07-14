@@ -1,0 +1,49 @@
+# SubFly on Unraid + NVIDIA Tesla T4
+#
+# Prerequisites on Unraid:
+#   1. Install "Nvidia Driver" from Community Apps
+#   2. Settings → Docker → enable NVIDIA runtime (or use --gpus)
+#   3. Point MEDIA_PATH at your media share
+#
+# Start:
+#   cd service && docker compose up -d --build
+
+services:
+  subfly:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: subfly-service:latest
+    container_name: subfly
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      # Whisper model: tiny|base|small|medium|large-v3
+      # Tesla T4 (16GB) runs large-v3 well in float16
+      SUBFLY_MODEL_SIZE: ${SUBFLY_MODEL_SIZE:-large-v3}
+      SUBFLY_DEVICE: cuda
+      SUBFLY_COMPUTE_TYPE: float16
+      SUBFLY_LANGUAGE: en
+      SUBFLY_CHUNK_SECONDS: "3.0"
+      SUBFLY_VAD_FILTER: "true"
+      # Map Kodi paths → container paths (comma-separated src=dst)
+      # Kodi /media/Movies/x.mkv → container /data/Movies/x.mkv
+      SUBFLY_PATH_MAPS: ${SUBFLY_PATH_MAPS:-/media=/data}
+      # Optional shared secret; empty disables auth
+      SUBFLY_API_TOKEN: ${SUBFLY_API_TOKEN:-}
+    volumes:
+      - subfly-models:/models
+      - ${MEDIA_PATH:-/mnt/user/media}:/data:ro
+    gpus: all
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8765/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+
+volumes:
+  subfly-models:
