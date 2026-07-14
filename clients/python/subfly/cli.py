@@ -37,6 +37,7 @@ def cmd_transcribe(args: argparse.Namespace) -> int:
         args.media,
         start_seconds=args.start,
         language=args.language,
+        vocabulary_hint=args.vocabulary_hint,
     )
     print(f"session {session['session_id']}", file=sys.stderr)
     print(f"resolved {session.get('resolved_path')}", file=sys.stderr)
@@ -97,7 +98,9 @@ def cmd_live(args: argparse.Namespace) -> int:
             print(f"ERROR: {data.get('message')}", file=sys.stderr)
 
     client = SubFlyClient(args.url, token=args.token or "")
-    client.connect_live_pcm(on_message=on_message, language=args.language)
+    client.connect_live_pcm(
+        on_message=on_message, language=args.language, vocabulary_hint=args.vocabulary_hint
+    )
 
     with wave.open(args.wav, "rb") as wf:
         channels = wf.getnchannels()
@@ -149,6 +152,12 @@ def main(argv: list[str] | None = None) -> int:
     p_tr.add_argument("--start", type=float, default=0.0)
     p_tr.add_argument("--duration", type=float, default=0.0, help="Stop after N seconds of simulated playback (0=until done)")
     p_tr.add_argument("--language", default="en")
+    p_tr.add_argument(
+        "--vocabulary-hint",
+        default="",
+        dest="vocabulary_hint",
+        help="Title/character names/plot/genre to bias Whisper toward (faster-whisper hotwords)",
+    )
     p_tr.set_defaults(func=cmd_transcribe)
 
     p_live = sub.add_parser(
@@ -157,6 +166,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_live.add_argument("--wav", required=True, help="Path to a local WAV file to stream")
     p_live.add_argument("--language", default="en")
+    p_live.add_argument(
+        "--vocabulary-hint",
+        default="",
+        dest="vocabulary_hint",
+        help="Title/character names/plot/genre to bias Whisper toward (faster-whisper hotwords)",
+    )
     p_live.add_argument("--chunk-seconds", type=float, default=0.5)
     p_live.add_argument(
         "--realtime",

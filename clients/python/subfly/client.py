@@ -68,6 +68,7 @@ class SubFlyClient:
         media_path: str,
         start_seconds: float = 0.0,
         language: str = "en",
+        vocabulary_hint: str = "",
     ) -> dict[str, Any]:
         data = self._request(
             "POST",
@@ -76,6 +77,7 @@ class SubFlyClient:
                 "media_path": media_path,
                 "start_seconds": float(start_seconds),
                 "language": language,
+                "vocabulary_hint": vocabulary_hint,
             },
         )
         self.session_id = data.get("session_id")
@@ -122,6 +124,7 @@ class SubFlyClient:
         *,
         language: str = "en",
         start_seconds: float = 0.0,
+        vocabulary_hint: str = "",
         on_close: Optional[Callable[[], None]] = None,
     ) -> None:
         """Open /v1/live and push raw 16 kHz mono s16le PCM via send_pcm().
@@ -131,8 +134,16 @@ class SubFlyClient:
         that isn't a plain resolvable file/URL (add-ons, live TV/PVR, DRM
         content post-decode, screen/system audio capture, etc.) — stream
         continuously for as long as something is playing.
+
+        `vocabulary_hint` (title, character names, plot, genre — anything
+        that names the specific proper nouns of what's playing) is passed
+        to faster-whisper as `hotwords`, biasing transcription toward
+        getting those names right instead of relying purely on Whisper's
+        general vocabulary. Update it later with send_vocabulary_hint().
         """
         query: dict[str, str] = {"language": language, "start_seconds": str(start_seconds)}
+        if vocabulary_hint:
+            query["vocabulary_hint"] = vocabulary_hint
         if self.token:
             query["token"] = self.token
         url = build_ws_url(self.base_url, "/v1/live", query)
@@ -157,6 +168,10 @@ class SubFlyClient:
     def send_seek(self, position: float) -> None:
         if self._ws:
             self._ws.send_json({"type": "seek", "position": float(position)})
+
+    def send_vocabulary_hint(self, text: str) -> None:
+        if self._ws:
+            self._ws.send_json({"type": "vocabulary_hint", "text": text})
 
     def close_ws(self) -> None:
         if self._ws:
