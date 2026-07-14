@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.SubFly" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/subfly_primary</item>
+        <item name="colorPrimaryDark">@color/subfly_primary_dark</item>
+        <item name="colorAccent">@color/subfly_accent</item>
+    </style>
+</resources>

@@ -1,5 +1,17 @@
 # -*- coding: utf-8 -*-
-"""Playback watcher that starts/stops SubFly sessions."""
+"""Playback watcher that streams live audio to SubFly for ANY Kodi playback.
+
+Default mode captures the audio Kodi is actually outputting (post-decode)
+and streams it continuously to the server. Because capture happens after
+decode, it works the same way regardless of source: local files, external
+add-on libraries, live TV/PVR, plugin sources, or DRM content — anything
+Kodi can play out loud, the server can turn into captions.
+
+An optional "file_path" mode is kept for users who specifically want the
+server to open a resolvable local/network file itself (a bit faster, no
+local capture setup, but only works when the server can actually reach
+the file).
+"""
 
 from __future__ import annotations
 
@@ -11,6 +23,7 @@ import xbmc
 import xbmcaddon
 import xbmcgui
 
+from capture import AudioCapture, CaptureConfig
 from client import SubFlyClient
 from overlay import SubtitleOverlay
 
@@ -46,12 +59,12 @@ class SubFlyMonitor(xbmc.Monitor):
         self.player = SubFlyPlayer(self)
         self.overlay = SubtitleOverlay()
         self.client: Optional[SubFlyClient] = None
+        self.capture: Optional[AudioCapture] = None
         self._session_lock = threading.Lock()
         self._active = False
-        self._last_path: Optional[str] = None
+        self._generation = 0
         self._cues: list[dict[str, Any]] = []
         self._cue_lock = threading.Lock()
-        self._notify = True
 
     # --- settings helpers -------------------------------------------------
     def _enabled(self) -> bool:
@@ -68,6 +81,17 @@ class SubFlyMonitor(xbmc.Monitor):
 
     def _notify_errors(self) -> bool:
         return self.addon.getSettingBool("notify_errors")
+
+    def _capture_mode(self) -> str:
+        return self.addon.getSettingString("capture_mode") or "live_capture"
+
+    def _capture_config(self) -> CaptureConfig:
+        return CaptureConfig(
+            ffmpeg_path=self.addon.getSettingString("ffmpeg_path") or "ffmpeg",
+            backend=self.addon.getSettingString("audio_backend") or "pulse",
+            device=self.addon.getSettingString("audio_device") or "",
+            custom_input_args=self.addon.getSettingString("custom_input_args") or "",
+        )
 
     # --- main loop --------------------------------------------------------
     def run(self) -> None:
@@ -97,21 +121,31 @@ class SubFlyMonitor(xbmc.Monitor):
             return
         if not self.player.isPlayingVideo():
             return
+        # Any new playback start gets a fresh session, whatever the source.
+        # (Path is best-effort metadata only — plugin/PVR sources often
+        # can't report one, and that's fine: live capture doesn't need it.)
         try:
             path = self.player.getPlayingFile()
         except Exception:
             path = ""
-        if not path:
-            return
-        # Avoid restarting on the same file if already active
+        try:
+            start = float(self.player.getTime())
+        except Exception:
+            start = 0.0
+
         with self._session_lock:
-            if self._active and self._last_path == path:
-                return
+            self._generation += 1
+            gen = self._generation
             self._teardown_session_unlocked()
-            self._start_session_unlocked(path)
+            if self._capture_mode() == "file_path":
+                self._start_file_session_unlocked(path, start, gen)
+            else:
+                self._start_live_capture_unlocked(path, start, gen)
 
     def on_playback_ended(self) -> None:
-        self._teardown_session()
+        with self._session_lock:
+            self._generation += 1
+            self._teardown_session_unlocked()
 
     def on_playback_paused(self, paused: bool) -> None:
         if self.client and self._active:
@@ -132,19 +166,72 @@ class SubFlyMonitor(xbmc.Monitor):
 
     def onSettingsChanged(self) -> None:
         xbmc.log("[SubFly] settings changed", xbmc.LOGINFO)
-        # If disabled mid-playback, tear down
         if not self._enabled():
-            self._teardown_session()
+            with self._session_lock:
+                self._generation += 1
+                self._teardown_session_unlocked()
 
-    # --- session lifecycle ------------------------------------------------
-    def _start_session_unlocked(self, path: str) -> None:
+    # --- live capture mode (default; works for any source) ----------------
+    def _start_live_capture_unlocked(self, path: str, start: float, gen: int) -> None:
         url = self._base_url()
         token = self._token()
         language = self._language()
+
+        client = SubFlyClient(url, token)
         try:
-            start = float(self.player.getTime())
-        except Exception:
-            start = 0.0
+            health = client.health()
+            if not health.get("ok"):
+                raise RuntimeError("service unhealthy")
+            client.connect_live(
+                on_message=self._on_ws_message,
+                language=language,
+                start_seconds=start,
+                on_close=self._on_ws_close,
+            )
+        except Exception as exc:
+            self._report_start_error(exc)
+            return
+
+        capture = AudioCapture(
+            self._capture_config(),
+            on_pcm=client.send_pcm,
+            on_error=self._on_capture_error,
+        )
+        try:
+            capture.start()
+        except Exception as exc:
+            client.close_ws()
+            self._report_start_error(exc)
+            return
+
+        self.client = client
+        self.capture = capture
+        self._active = True
+        with self._cue_lock:
+            self._cues = []
+        xbmc.log(f"[SubFly] live capture started (item: {path or 'unknown source'})", xbmc.LOGINFO)
+        self._notify_connected()
+
+    # --- file-path mode (opt-in fast path for resolvable local files) -----
+    def _start_file_session_unlocked(self, path: str, start: float, gen: int) -> None:
+        if not path:
+            xbmc.log(
+                "[SubFly] file_path mode needs a resolvable file but none was reported; "
+                "switch capture_mode to live_capture for this source",
+                xbmc.LOGWARNING,
+            )
+            if self._notify_errors():
+                xbmcgui.Dialog().notification(
+                    "SubFly",
+                    "No file path for this source — switch to live capture mode",
+                    xbmcgui.NOTIFICATION_WARNING,
+                    5000,
+                )
+            return
+
+        url = self._base_url()
+        token = self._token()
+        language = self._language()
 
         client = SubFlyClient(url, token)
         try:
@@ -155,22 +242,27 @@ class SubFlyMonitor(xbmc.Monitor):
             sid = info["session_id"]
             client.connect_session_ws(sid, on_message=self._on_ws_message, on_close=self._on_ws_close)
         except Exception as exc:
-            xbmc.log(f"[SubFly] failed to start session: {exc}", xbmc.LOGERROR)
-            if self._notify_errors():
-                xbmcgui.Dialog().notification(
-                    "SubFly",
-                    f"Cannot reach service: {exc}",
-                    xbmcgui.NOTIFICATION_ERROR,
-                    5000,
-                )
+            self._report_start_error(exc)
             return
 
         self.client = client
         self._active = True
-        self._last_path = path
         with self._cue_lock:
             self._cues = []
-        xbmc.log(f"[SubFly] session started for {path}", xbmc.LOGINFO)
+        xbmc.log(f"[SubFly] file session started for {path}", xbmc.LOGINFO)
+        self._notify_connected()
+
+    def _report_start_error(self, exc: Exception) -> None:
+        xbmc.log(f"[SubFly] failed to start session: {exc}", xbmc.LOGERROR)
+        if self._notify_errors():
+            xbmcgui.Dialog().notification(
+                "SubFly",
+                f"Cannot reach service: {exc}",
+                xbmcgui.NOTIFICATION_ERROR,
+                5000,
+            )
+
+    def _notify_connected(self) -> None:
         if self.addon.getSettingBool("notify_start"):
             xbmcgui.Dialog().notification(
                 "SubFly",
@@ -185,10 +277,15 @@ class SubFlyMonitor(xbmc.Monitor):
 
     def _teardown_session_unlocked(self) -> None:
         self._active = False
-        self._last_path = None
         with self._cue_lock:
             self._cues = []
         self.overlay.clear()
+        if self.capture:
+            try:
+                self.capture.stop()
+            except Exception:
+                pass
+            self.capture = None
         if self.client:
             try:
                 self.client.close_ws()
@@ -214,7 +311,6 @@ class SubFlyMonitor(xbmc.Monitor):
             if cue["text"]:
                 with self._cue_lock:
                     self._cues.append(cue)
-                    # Keep buffer bounded
                     if len(self._cues) > 200:
                         self._cues = self._cues[-100:]
         elif typ == "error":
@@ -222,6 +318,16 @@ class SubFlyMonitor(xbmc.Monitor):
             xbmc.log(f"[SubFly] server error: {msg}", xbmc.LOGERROR)
             if self._notify_errors():
                 xbmcgui.Dialog().notification("SubFly", str(msg), xbmcgui.NOTIFICATION_ERROR, 5000)
+
+    def _on_capture_error(self, message: str) -> None:
+        xbmc.log(f"[SubFly] audio capture error: {message}", xbmc.LOGERROR)
+        if self._notify_errors():
+            xbmcgui.Dialog().notification(
+                "SubFly",
+                "Audio capture failed — check capture backend/device settings",
+                xbmcgui.NOTIFICATION_ERROR,
+                6000,
+            )
 
     def _on_ws_close(self) -> None:
         xbmc.log("[SubFly] websocket closed", xbmc.LOGINFO)
@@ -236,10 +342,8 @@ class SubFlyMonitor(xbmc.Monitor):
         hold = 3.0
         with self._cue_lock:
             due = [c for c in self._cues if c["start"] - lead <= position <= c["end"] + 0.35]
-            # Drop old cues
             self._cues = [c for c in self._cues if c["end"] + 1.0 >= position]
             if due:
-                # Prefer the latest overlapping cue
                 cue = due[-1]
                 active_text = cue["text"]
                 hold = max(1.5, cue["end"] - position + 0.5)

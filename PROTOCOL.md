@@ -107,16 +107,41 @@ Send `position` about once per second so the server stays roughly in sync with p
 
 ---
 
-## WebSocket — live PCM
+## WebSocket — live PCM (recommended default)
 
-`WS /v1/live?language=en`
+`WS /v1/live?language=en&start_seconds=0`
 
-For clients that can capture decoded audio themselves:
+This is the **source-agnostic mode**: the server never opens a file, so it
+works for anything a client can capture audio from — local files, external
+add-on libraries, live TV/PVR, plugin sources, DRM content post-decode,
+screen/system audio, anything. All three bundled clients (`clients/kodi`,
+`clients/android`, `clients/python`) use this by default.
 
-1. Connect
-2. Send binary frames: **16 kHz mono PCM s16le**
-3. Receive the same `subtitle` events as above
-4. Optional JSON: `position`, `pause`, `stop`
+1. Connect (optionally with `?token=`)
+2. Send binary frames continuously: **16 kHz mono PCM s16le**, for as long
+   as something is playing — this is genuinely a live, continuous, two-way
+   stream, not a one-shot request
+3. Receive `subtitle` events (same shape as above) as they're transcribed
+4. Send JSON control messages, ideally about once a second:
+   - `{"type": "position", "position": 12.4}` — current playback clock
+   - `{"type": "seek", "position": 90.0}` — same effect as `position`, sent
+     right after a seek so the server resyncs immediately instead of
+     waiting for the next tick
+   - `{"type": "pause", "paused": true}` — server stops transcribing
+     incoming audio while paused (send this immediately on pause/resume,
+     not just on the next tick)
+   - `{"type": "stop"}` — end the session
+
+### Timestamp sync
+
+Cue `start`/`end` values are computed from a running "expected playback
+position" the server maintains per session, seeded from `start_seconds` and
+advanced by `chunk_seconds` after every processed chunk. Whenever the
+client's reported `position` drifts from that running value by more than
+~1.5 chunk-lengths (a seek, a live-TV channel change, a long pause), the
+server snaps its internal offset to match instead of accumulating drift
+forever. Send `position` regularly and send `seek` immediately after a user
+seek so this recovers fast.
 
 ---
 

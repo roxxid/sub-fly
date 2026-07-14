@@ -79,16 +79,25 @@ class SessionManager:
         self,
         *,
         language: Optional[str] = None,
+        start_seconds: float = 0.0,
     ) -> SessionState:
+        """Start a session fed by raw PCM pushed from the client.
+
+        This mode never opens a file on the server: it works for ANY
+        playback the client can capture audio from (local files, external
+        libraries, add-ons/plugins, live TV/PVR, DRM content post-decode,
+        anything). The client streams continuously for as long as
+        something is playing.
+        """
         session_id = str(uuid.uuid4())
         state = SessionState(
             session_id=session_id,
             media_path="pcm://live",
             resolved_path="pcm://live",
+            playback_position=max(0.0, start_seconds),
         )
         self._sessions[session_id] = state
         state.running = True
-        # PCM sessions are driven by inbound audio frames; no background ffmpeg task.
         await state.outbound.put(
             {
                 "type": "session_started",
@@ -96,11 +105,13 @@ class SessionManager:
                 "mode": "pcm",
             }
         )
-        # stash language on the state via outbound meta for handler use
-        state.playback_position = 0.0
         setattr(state, "language", language or self.settings.language)
         setattr(state, "pcm_buffer", bytearray())
-        setattr(state, "pcm_offset", 0.0)
+        # pcm_offset is the playback-clock timestamp we expect the *next*
+        # chunk to start at. It advances by chunk_seconds after each chunk
+        # and re-anchors to the client-reported position whenever they
+        # drift apart (seek, pause/resume gap, live-TV channel change...).
+        setattr(state, "pcm_offset", max(0.0, start_seconds))
         return state
 
     async def seek(self, session_id: str, position: float) -> None:
@@ -156,6 +167,9 @@ class SessionManager:
         if state.paused:
             return
 
+        if timestamp is not None:
+            state.playback_position = timestamp
+
         buf: bytearray = getattr(state, "pcm_buffer")
         buf.extend(pcm)
         chunk_bytes = int(
@@ -163,8 +177,15 @@ class SessionManager:
         )  # mono s16le
         language = getattr(state, "language", self.settings.language)
         offset = getattr(state, "pcm_offset", 0.0)
+        resync_threshold = self.settings.chunk_seconds * 1.5
 
         while len(buf) >= chunk_bytes:
+            # If the client's reported playback clock has drifted away from
+            # our running offset (seek, live-TV jump, resume after a long
+            # pause), snap to it instead of accumulating error forever.
+            if abs(state.playback_position - offset) > resync_threshold:
+                offset = state.playback_position
+
             chunk = bytes(buf[:chunk_bytes])
             del buf[:chunk_bytes]
             audio = pcm_s16le_to_float32(chunk)
@@ -178,8 +199,6 @@ class SessionManager:
                 await self._emit_subtitle(state, seg)
             offset += self.settings.chunk_seconds
             setattr(state, "pcm_offset", offset)
-            if timestamp is not None:
-                state.playback_position = timestamp
 
     async def _run_url_pipeline(
         self,

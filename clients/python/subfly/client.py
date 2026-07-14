@@ -121,10 +121,18 @@ class SubFlyClient:
         on_message: Callable[[Any], None],
         *,
         language: str = "en",
+        start_seconds: float = 0.0,
         on_close: Optional[Callable[[], None]] = None,
     ) -> None:
-        """Open /v1/live and push raw 16 kHz mono s16le PCM via send_pcm()."""
-        query: dict[str, str] = {"language": language}
+        """Open /v1/live and push raw 16 kHz mono s16le PCM via send_pcm().
+
+        This is the source-agnostic mode: the server never opens a file,
+        it just transcribes whatever PCM you stream. Use it for anything
+        that isn't a plain resolvable file/URL (add-ons, live TV/PVR, DRM
+        content post-decode, screen/system audio capture, etc.) — stream
+        continuously for as long as something is playing.
+        """
+        query: dict[str, str] = {"language": language, "start_seconds": str(start_seconds)}
         if self.token:
             query["token"] = self.token
         url = build_ws_url(self.base_url, "/v1/live", query)

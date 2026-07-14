@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  server-and-python-clients:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install server deps
+        run: pip install -r server/requirements.txt
+      - name: Server tests
+        run: cd server && python -m pytest -q
+      - name: Kodi client tests
+        run: cd clients/kodi && python -m pytest -q tests/
+      - name: Python client tests
+        run: cd clients/python && PYTHONPATH=. python -m pytest -q tests/
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - name: Assemble debug APK
+        run: cd clients/android && ./gradlew assembleDebug --console=plain
+      - name: Lint
+        run: cd clients/android && ./gradlew lintDebug --console=plain

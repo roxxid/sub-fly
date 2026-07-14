@@ -220,10 +220,19 @@ async def session_ws(websocket: WebSocket, session_id: str):
 async def live_pcm_ws(websocket: WebSocket):
     """Accept raw mono s16le PCM frames and return live English subtitles.
 
+    This is the source-agnostic mode: the server never opens a file, so it
+    works for literally anything a client can capture audio from (local
+    files, external libraries, add-on/plugin sources, live TV/PVR, DRM
+    content post-decode, screen/system audio, etc.). The client is expected
+    to stream continuously for as long as something is playing.
+
     Protocol:
-      1. Client connects (optional ?token=&language=en)
+      1. Client connects (optional ?token=&language=en&start_seconds=0)
       2. Server sends {"type":"session_started",...}
-      3. Client sends binary PCM frames (16kHz mono s16le) OR JSON controls
+      3. Client sends binary PCM frames (16kHz mono s16le) continuously,
+         and periodically a JSON {"type":"position","position":<seconds>}
+         so the server can keep caption timestamps anchored to the actual
+         playback clock (handles seeks, live-TV jumps, pause gaps, etc.)
       4. Server sends {"type":"subtitle","start":..,"end":..,"text":"..."}
     """
     assert sessions is not None
@@ -234,8 +243,12 @@ async def live_pcm_ws(websocket: WebSocket):
         return
 
     language = websocket.query_params.get("language") or settings.language
+    try:
+        start_seconds = float(websocket.query_params.get("start_seconds") or 0.0)
+    except ValueError:
+        start_seconds = 0.0
     await websocket.accept()
-    state = await sessions.start_pcm_session(language=language)
+    state = await sessions.start_pcm_session(language=language, start_seconds=start_seconds)
     session_id = state.session_id
 
     async def pump_out() -> None:
@@ -260,6 +273,8 @@ async def live_pcm_ws(websocket: WebSocket):
                 typ = data.get("type")
                 if typ == "position":
                     state.playback_position = float(data.get("position", 0))
+                elif typ == "seek":
+                    await sessions.seek(session_id, float(data.get("position", 0)))
                 elif typ == "pause":
                     await sessions.set_paused(session_id, bool(data.get("paused", True)))
                 elif typ == "stop":

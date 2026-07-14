@@ -64,6 +64,32 @@ class SubFlyClient:
         self._ws = WebSocketClient(url, on_message=on_message, on_close=on_close)
         self._ws.connect()
 
+    def connect_live(
+        self,
+        on_message: Callable[[Any], None],
+        *,
+        language: str = "en",
+        start_seconds: float = 0.0,
+        on_close: Optional[Callable[[], None]] = None,
+    ) -> None:
+        """Open the source-agnostic continuous PCM stream (/v1/live).
+
+        Use this instead of start_session()/connect_session_ws() when the
+        server can't open the playing item itself (add-ons, live TV/PVR,
+        DRM, anything not a plain resolvable file path). Push audio with
+        send_pcm() for as long as something is playing.
+        """
+        query = {"language": language, "start_seconds": str(start_seconds)}
+        if self.token:
+            query["token"] = self.token
+        url = build_ws_url(self.base_url, "/v1/live", query)
+        self._ws = WebSocketClient(url, on_message=on_message, on_close=on_close)
+        self._ws.connect()
+
+    def send_pcm(self, pcm: bytes) -> None:
+        if self._ws:
+            self._ws.send_binary(pcm)
+
     def send_position(self, position: float) -> None:
         if self._ws:
             self._ws.send_json({"type": "position", "position": float(position)})

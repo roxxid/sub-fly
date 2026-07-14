@@ -40,6 +40,76 @@
           <control type="spinner" format="string"/>
         </setting>
       </group>
+      <group id="3" label="30030">
+        <setting id="capture_mode" type="string" label="30031" help="30032">
+          <level>0</level>
+          <default>live_capture</default>
+          <constraints>
+            <options>
+              <option label="30033">live_capture</option>
+              <option label="30034">file_path</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="string"/>
+        </setting>
+        <setting id="audio_backend" type="string" label="30035" help="30036">
+          <level>0</level>
+          <default>pulse</default>
+          <constraints>
+            <options>
+              <option label="PulseAudio / PipeWire monitor (Linux)">pulse</option>
+              <option label="ALSA loopback device (Linux)">alsa</option>
+              <option label="DirectShow virtual cable (Windows)">dshow</option>
+              <option label="AVFoundation virtual device (macOS)">avfoundation</option>
+              <option label="Custom ffmpeg input args">custom</option>
+            </options>
+          </constraints>
+          <control type="spinner" format="string"/>
+          <dependencies>
+            <dependency type="visible" setting="capture_mode" operator="is">live_capture</dependency>
+          </dependencies>
+        </setting>
+        <setting id="audio_device" type="string" label="30037" help="30038">
+          <level>1</level>
+          <default/>
+          <constraints>
+            <allowempty>true</allowempty>
+          </constraints>
+          <control type="edit" format="string">
+            <heading>30037</heading>
+          </control>
+          <dependencies>
+            <dependency type="visible" setting="capture_mode" operator="is">live_capture</dependency>
+          </dependencies>
+        </setting>
+        <setting id="custom_input_args" type="string" label="30039" help="30040">
+          <level>1</level>
+          <default/>
+          <constraints>
+            <allowempty>true</allowempty>
+          </constraints>
+          <control type="edit" format="string">
+            <heading>30039</heading>
+          </control>
+          <dependencies>
+            <dependency type="visible" setting="capture_mode" operator="is">live_capture</dependency>
+            <dependency type="visible" setting="audio_backend" operator="is">custom</dependency>
+          </dependencies>
+        </setting>
+        <setting id="ffmpeg_path" type="string" label="30041" help="30042">
+          <level>1</level>
+          <default>ffmpeg</default>
+          <constraints>
+            <allowempty>false</allowempty>
+          </constraints>
+          <control type="edit" format="string">
+            <heading>30041</heading>
+          </control>
+          <dependencies>
+            <dependency type="visible" setting="capture_mode" operator="is">live_capture</dependency>
+          </dependencies>
+        </setting>
+      </group>
       <group id="2" label="30002">
         <setting id="notify_start" type="boolean" label="30020" help="">
           <level>1</level>

@@ -58,3 +58,55 @@ msgstr "Notify when connected"
 msgctxt "#30021"
 msgid "Notify on errors"
 msgstr "Notify on errors"
+
+msgctxt "#30030"
+msgid "Audio capture"
+msgstr "Audio capture"
+
+msgctxt "#30031"
+msgid "Capture mode"
+msgstr "Capture mode"
+
+msgctxt "#30032"
+msgid "Live capture works for any source (files, add-ons, live TV, DRM). File path mode is faster but only works for plain local/network files the server can open directly."
+msgstr "Live capture works for any source (files, add-ons, live TV, DRM). File path mode is faster but only works for plain local/network files the server can open directly."
+
+msgctxt "#30033"
+msgid "Live capture (works with everything)"
+msgstr "Live capture (works with everything)"
+
+msgctxt "#30034"
+msgid "File path (fast, local/network files only)"
+msgstr "File path (fast, local/network files only)"
+
+msgctxt "#30035"
+msgid "Capture backend"
+msgstr "Capture backend"
+
+msgctxt "#30036"
+msgid "How to grab the audio this device is outputting. See clients/kodi/README.md for setup per platform."
+msgstr "How to grab the audio this device is outputting. See clients/kodi/README.md for setup per platform."
+
+msgctxt "#30037"
+msgid "Capture device (optional override)"
+msgstr "Capture device (optional override)"
+
+msgctxt "#30038"
+msgid "Overrides the backend default, e.g. a specific PulseAudio monitor name or ALSA device"
+msgstr "Overrides the backend default, e.g. a specific PulseAudio monitor name or ALSA device"
+
+msgctxt "#30039"
+msgid "Custom ffmpeg input arguments"
+msgstr "Custom ffmpeg input arguments"
+
+msgctxt "#30040"
+msgid "Used verbatim when backend is Custom, e.g. -f pulse -i alsa_output.pci-0000_00_1f.3.monitor"
+msgstr "Used verbatim when backend is Custom, e.g. -f pulse -i alsa_output.pci-0000_00_1f.3.monitor"
+
+msgctxt "#30041"
+msgid "ffmpeg path"
+msgstr "ffmpeg path"
+
+msgctxt "#30042"
+msgid "Full path to ffmpeg if it is not on PATH"
+msgstr "Full path to ffmpeg if it is not on PATH"
