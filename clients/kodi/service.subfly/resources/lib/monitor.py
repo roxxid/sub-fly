@@ -25,6 +25,7 @@ import xbmcgui
 
 from capture import AudioCapture, CaptureConfig
 from client import SubFlyClient
+from hints import build_vocabulary_hint
 from overlay import SubtitleOverlay
 
 
@@ -92,6 +93,57 @@ class SubFlyMonitor(xbmc.Monitor):
             device=self.addon.getSettingString("audio_device") or "",
             custom_input_args=self.addon.getSettingString("custom_input_args") or "",
         )
+
+    def _build_vocabulary_hint(self) -> str:
+        """Best-effort "what's playing" text to help Whisper get proper
+        nouns right (character/place names, show titles). Coverage depends
+        entirely on how much metadata Kodi has for the current item —
+        library items with scraped metadata give this plenty to work with;
+        an unscraped file or add-on stream may give it nothing, which is
+        harmless (falls back to Whisper's default behavior).
+        """
+
+        def safe(fn, default=""):
+            try:
+                return fn()
+            except Exception:
+                return default
+
+        try:
+            tag = self.player.getVideoInfoTag()
+        except Exception:
+            return ""
+        if tag is None:
+            return ""
+
+        title = safe(tag.getTitle)
+        tvshowtitle = safe(tag.getTVShowTitle)
+        plot = safe(tag.getPlotOutline) or safe(tag.getPlot)
+
+        cast_raw = safe(tag.getCast, [])
+        cast_names: list = []
+        if isinstance(cast_raw, str):
+            cast_names = [c.strip() for c in cast_raw.split(",") if c.strip()]
+        elif cast_raw:
+            for actor in cast_raw:
+                name_fn = getattr(actor, "getName", None)
+                cast_names.append(name_fn() if callable(name_fn) else str(actor))
+
+        genres = safe(lambda: list(tag.getGenres()), [])
+        if not genres:
+            genre_str = safe(tag.getGenre)
+            genres = [genre_str] if genre_str else []
+
+        try:
+            return build_vocabulary_hint(
+                title=title,
+                tvshowtitle=tvshowtitle,
+                cast=cast_names,
+                genres=genres,
+                plot=plot,
+            )
+        except Exception:
+            return ""
 
     # --- main loop --------------------------------------------------------
     def run(self) -> None:
@@ -176,6 +228,7 @@ class SubFlyMonitor(xbmc.Monitor):
         url = self._base_url()
         token = self._token()
         language = self._language()
+        vocabulary_hint = self._build_vocabulary_hint()
 
         client = SubFlyClient(url, token)
         try:
@@ -186,6 +239,7 @@ class SubFlyMonitor(xbmc.Monitor):
                 on_message=self._on_ws_message,
                 language=language,
                 start_seconds=start,
+                vocabulary_hint=vocabulary_hint,
                 on_close=self._on_ws_close,
             )
         except Exception as exc:
@@ -232,13 +286,16 @@ class SubFlyMonitor(xbmc.Monitor):
         url = self._base_url()
         token = self._token()
         language = self._language()
+        vocabulary_hint = self._build_vocabulary_hint()
 
         client = SubFlyClient(url, token)
         try:
             health = client.health()
             if not health.get("ok"):
                 raise RuntimeError("service unhealthy")
-            info = client.start_session(path, start_seconds=start, language=language)
+            info = client.start_session(
+                path, start_seconds=start, language=language, vocabulary_hint=vocabulary_hint
+            )
             sid = info["session_id"]
             client.connect_session_ws(sid, on_message=self._on_ws_message, on_close=self._on_ws_close)
         except Exception as exc:

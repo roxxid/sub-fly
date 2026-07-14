@@ -33,11 +33,13 @@ class SubFlyClient:
         media_path: str,
         start_seconds: float = 0.0,
         language: str = "en",
+        vocabulary_hint: str = "",
     ) -> dict[str, Any]:
         body = {
             "media_path": media_path,
             "start_seconds": float(start_seconds),
             "language": language,
+            "vocabulary_hint": vocabulary_hint,
         }
         data = self._request("POST", "/v1/sessions", body)
         self.session_id = data.get("session_id")
@@ -70,6 +72,7 @@ class SubFlyClient:
         *,
         language: str = "en",
         start_seconds: float = 0.0,
+        vocabulary_hint: str = "",
         on_close: Optional[Callable[[], None]] = None,
     ) -> None:
         """Open the source-agnostic continuous PCM stream (/v1/live).
@@ -78,8 +81,14 @@ class SubFlyClient:
         server can't open the playing item itself (add-ons, live TV/PVR,
         DRM, anything not a plain resolvable file path). Push audio with
         send_pcm() for as long as something is playing.
+
+        `vocabulary_hint` (title/cast/plot/genre — see hints.py) biases
+        Whisper's decoding toward the specific proper nouns of whatever's
+        playing; leave it empty if you have nothing useful to send.
         """
         query = {"language": language, "start_seconds": str(start_seconds)}
+        if vocabulary_hint:
+            query["vocabulary_hint"] = vocabulary_hint
         if self.token:
             query["token"] = self.token
         url = build_ws_url(self.base_url, "/v1/live", query)
@@ -101,6 +110,10 @@ class SubFlyClient:
     def send_seek(self, position: float) -> None:
         if self._ws:
             self._ws.send_json({"type": "seek", "position": float(position)})
+
+    def send_vocabulary_hint(self, text: str) -> None:
+        if self._ws:
+            self._ws.send_json({"type": "vocabulary_hint", "text": text})
 
     def close_ws(self) -> None:
         if self._ws:

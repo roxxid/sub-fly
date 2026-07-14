@@ -38,3 +38,49 @@ def test_connect_live_builds_expected_url(monkeypatch):
 def test_build_ws_url_scheme_mapping():
     assert build_ws_url("http://h:1", "/v1/live") == "ws://h:1/v1/live"
     assert build_ws_url("https://h", "/v1/live").startswith("wss://h/v1/live")
+
+
+def test_connect_live_includes_vocabulary_hint_when_present(monkeypatch):
+    captured = {}
+
+    class FakeWS:
+        def __init__(self, url, on_message=None, on_close=None):
+            captured["url"] = url
+
+        def connect(self):
+            pass
+
+    import client as client_module
+
+    monkeypatch.setattr(client_module, "WebSocketClient", FakeWS)
+
+    c = SubFlyClient("http://host:8765")
+    c.connect_live(
+        on_message=lambda m: None,
+        language="en",
+        start_seconds=0,
+        vocabulary_hint="Dune. Characters: Paul Atreides, Chani.",
+    )
+
+    assert "vocabulary_hint=Dune" in captured["url"]
+    assert "Paul+Atreides" in captured["url"] or "Paul%20Atreides" in captured["url"]
+
+
+def test_connect_live_omits_vocabulary_hint_when_empty(monkeypatch):
+    captured = {}
+
+    class FakeWS:
+        def __init__(self, url, on_message=None, on_close=None):
+            captured["url"] = url
+
+        def connect(self):
+            pass
+
+    import client as client_module
+
+    monkeypatch.setattr(client_module, "WebSocketClient", FakeWS)
+
+    c = SubFlyClient("http://host:8765")
+    c.connect_live(on_message=lambda m: None, language="en", start_seconds=0)
+
+    assert "vocabulary_hint" not in captured["url"]
